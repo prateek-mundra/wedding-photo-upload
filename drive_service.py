@@ -14,20 +14,25 @@ Auth strategy: OAuth 2.0 client credentials.
 
 import io
 import json
+import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import google_auth_httplib2  # noqa: F401
-from google.auth.transport.requests import Request
+from google.auth.transport.requests import AuthorizedSession, Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
+from requests import exceptions as requests_exceptions
 
 from config import get_settings
 
 OAUTH_SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+MAX_RETRIES = 3
+RETRY_DELAY_SECONDS = 2
+REQUEST_TIMEOUT_SECONDS = 60
 
 
 def resolve_config_path(config_value: str, default_name: str) -> Path:
@@ -90,13 +95,17 @@ def get_drive_service():
     return build("drive", "v3", credentials=credentials, cache_discovery=False)
 
 
+def get_authorized_session() -> AuthorizedSession:
+    credentials = get_oauth_credentials()
+    return AuthorizedSession(credentials)
+
+
 @lru_cache(maxsize=64)
-def get_or_create_event_folder(event_name: str) -> str:
-    """Return the folder ID for a given event (e.g. 'haldi', 'reception'),
-    creating it under ROOT_FOLDER_ID the first time it's requested."""
+def get_or_create_upload_folder() -> str:
+    """Return the shared upload folder ID, creating it under DRIVE_ROOT_FOLDER_ID if needed."""
     service = get_drive_service()
     root_folder_id = get_settings().drive_root_folder_id
-    safe_name = event_name.strip().lower() or "general"
+    safe_name = "uploads"
 
     parent_filter = f"'{root_folder_id}' in parents" if root_folder_id else "'root' in parents"
     query = (
@@ -119,32 +128,50 @@ def get_or_create_event_folder(event_name: str) -> str:
     return folder["id"]
 
 
-def upload_file_bytes(
-    file_bytes: bytes,
+def _retry_drive_call(fn, *args, **kwargs) -> Any:
+    last_error: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            return fn(*args, **kwargs)
+        except (requests_exceptions.Timeout, requests_exceptions.RequestException, Exception) as exc:
+            last_error = exc
+            if attempt == MAX_RETRIES - 1:
+                raise RuntimeError(f"Google Drive request failed after {MAX_RETRIES} attempts: {exc}") from exc
+            time.sleep(RETRY_DELAY_SECONDS)
+    if last_error is not None:
+        raise RuntimeError(str(last_error))
+    raise RuntimeError("Google Drive request failed")
+
+
+def upload_file_stream(
+    file_obj: Any,
     filename: str,
     mimetype: str,
-    event_name: str = "general",
 ) -> dict:
-    """Uploads raw bytes to the Drive folder for `event_name`.
-    Returns {id, name, webViewLink}.
-    """
+    """Upload a file-like object to the shared Drive folder with retries and timeout handling."""
     service = get_drive_service()
-    folder_id = get_or_create_event_folder(event_name)
+    folder_id = get_or_create_upload_folder()
 
-    media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mimetype, resumable=True)
+    media = MediaIoBaseUpload(file_obj, mimetype=mimetype, resumable=True)
     metadata = {"name": filename, "parents": [folder_id]}
 
-    uploaded = (
-        service.files()
-        .create(body=metadata, media_body=media, fields="id, name, webViewLink, size")
-        .execute()
-    )
-    return uploaded
+    def create_file() -> dict:
+        return (
+            service.files()
+            .create(
+                body=metadata,
+                media_body=media,
+                fields="id, name, webViewLink, size",
+            )
+            .execute()
+        )
+
+    return _retry_drive_call(create_file)
 
 
-def list_event_files(event_name: str = "general") -> list:
+def list_uploaded_files() -> list:
     service = get_drive_service()
-    folder_id = get_or_create_event_folder(event_name)
+    folder_id = get_or_create_upload_folder()
     query = f"'{folder_id}' in parents and trashed=false"
     results = (
         service.files()

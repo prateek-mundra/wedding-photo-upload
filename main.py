@@ -17,6 +17,8 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from starlette.requests import Request
+
 import qrcode
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,7 +33,6 @@ from schemas import GalleryResponse, HealthResponse, UploadResponse
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("wedding_upload")
 
-ALLOWED_EVENTS = {"general"}
 ALLOWED_MIME_PREFIXES = ("image/", "video/")
 
 
@@ -62,14 +63,6 @@ if not FRONTEND_DIR.exists():
 app.mount("/app", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
 
 
-def get_validated_event(event: str) -> str:
-    """Normalize and validate an event name; raises 404 if unknown."""
-    normalized = event.strip().lower()
-    if normalized not in ALLOWED_EVENTS:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Unknown event '{event}'")
-    return normalized
-
-
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse(status="ok")
@@ -77,40 +70,38 @@ def health() -> HealthResponse:
 
 @app.post("/api/upload", response_model=UploadResponse)
 async def upload_media(
+    request: Request,
     file: UploadFile = File(...),
-    event: str = Form("general"),
     uploaded_by: str = Form(""),
 ) -> UploadResponse:
-    normalized_event = "general"
-
     if not file.content_type or not file.content_type.startswith(ALLOWED_MIME_PREFIXES):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Only image or video files are allowed.")
-
-    contents = await file.read()
-    size_mb = len(contents) / (1024 * 1024)
-    max_mb = get_settings().max_upload_mb
-    if size_mb > max_mb:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=f"File exceeds {max_mb}MB limit.")
-    if size_mb == 0:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Empty file.")
 
     original_name = file.filename or "upload"
     safe_filename = f"{uuid.uuid4().hex[:10]}_{original_name}"
 
+    file_obj = await file.read()
+    size_bytes = len(file_obj)
+    size_mb = size_bytes / (1024 * 1024)
+    max_mb = get_settings().max_upload_mb
+    if size_mb > max_mb:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=f"File exceeds {max_mb}MB limit.")
+    if size_bytes == 0:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Empty file.")
+
     try:
-        uploaded = drive_service.upload_file_bytes(
-            file_bytes=contents,
+        uploaded = drive_service.upload_file_stream(
+            file_obj=io.BytesIO(file_obj),
             filename=safe_filename,
             mimetype=file.content_type,
-            event_name=normalized_event,
         )
     except RuntimeError as exc:
         logger.error("Drive upload failed: %s", exc)
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
     logger.info(
-        "Uploaded %s (%.1fMB) event=%s uploaded_by=%r",
-        safe_filename, size_mb, normalized_event, uploaded_by,
+        "Uploaded %s (%.1fMB) uploaded_by=%r",
+        safe_filename, size_mb, uploaded_by,
     )
 
     return UploadResponse(
@@ -118,17 +109,15 @@ async def upload_media(
         file_id=uploaded.get("id"),
         name=uploaded.get("name"),
         view_link=uploaded.get("webViewLink"),
-        event=normalized_event,
+        event="general",
     )
 
 
-@app.get("/api/gallery/{event}", response_model=GalleryResponse, dependencies=[Depends(require_admin)])
-def gallery(event: str) -> GalleryResponse:
-    """Admin-only: list uploaded files for an event. Requires header
-    'X-Admin-Token: <ADMIN_TOKEN from .env>'."""
-    normalized_event = get_validated_event(event)
-    files = drive_service.list_event_files(normalized_event)
-    return GalleryResponse(event=normalized_event, count=len(files), files=files)
+@app.get("/api/gallery", response_model=GalleryResponse, dependencies=[Depends(require_admin)])
+def gallery() -> GalleryResponse:
+    """Admin-only: list uploaded files from the shared gallery folder."""
+    files = drive_service.list_uploaded_files()
+    return GalleryResponse(event="general", count=len(files), files=files)
 
 
 @app.get("/api/qr")

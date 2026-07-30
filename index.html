@@ -95,6 +95,12 @@
     background: var(--gold);
     transition: width 0.2s;
   }
+  .progress-label {
+    margin-top: 8px;
+    font-size: 0.84rem;
+    color: #6b5d4f;
+    text-align: center;
+  }
   #status { margin-top: 14px; font-size: 0.9rem; text-align: center; }
   .success { color: #2e7d32; }
   .error { color: #c62828; }
@@ -119,6 +125,7 @@
     <div class="progress-wrap" id="progressWrap">
       <div class="progress-bar" id="progressBar"></div>
     </div>
+    <div class="progress-label" id="progressLabel"></div>
 
     <button id="submitBtn" disabled>Upload</button>
     <div id="status"></div>
@@ -133,6 +140,7 @@
   const statusEl = document.getElementById('status');
   const progressWrap = document.getElementById('progressWrap');
   const progressBar = document.getElementById('progressBar');
+  const progressLabel = document.getElementById('progressLabel');
 
   dropZone.addEventListener('click', () => fileInput.click());
 
@@ -151,6 +159,7 @@
     statusEl.textContent = '';
     statusEl.className = '';
     progressWrap.style.display = 'block';
+    progressLabel.textContent = 'Preparing upload...';
 
     let uploadedCount = 0;
     for (const file of selectedFiles) {
@@ -160,6 +169,7 @@
       } catch (err) {
         statusEl.textContent = `Upload failed for ${file.name}. Please try again.`;
         statusEl.className = 'error';
+        progressLabel.textContent = 'Upload failed';
         submitBtn.disabled = false;
         return;
       }
@@ -167,6 +177,7 @@
 
     statusEl.textContent = `Thank you! ${uploadedCount} file(s) uploaded successfully 🎉`;
     statusEl.className = 'success';
+    progressLabel.textContent = 'Upload complete';
     fileInput.value = '';
     selectedFiles = [];
     fileListEl.textContent = '';
@@ -178,7 +189,6 @@
     return new Promise((resolve, reject) => {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('event', 'general');
       formData.append('uploaded_by', document.getElementById('uploaded_by').value);
 
       const xhr = new XMLHttpRequest();
@@ -189,6 +199,7 @@
           const perFile = e.loaded / e.total;
           const overall = ((index + perFile) / total) * 100;
           progressBar.style.width = `${overall}%`;
+          progressLabel.textContent = `Uploading ${file.name} (${Math.round(overall)}%)`;
         }
       };
 
