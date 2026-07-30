@@ -79,7 +79,7 @@
 
 <div id="loginBox">
   <h1>Admin Gallery</h1>
-  <p>Enter the admin token to view uploaded photos/videos.</p>
+  <p>Enter the admin token from your .env file (the value of ADMIN_TOKEN) to view uploaded photos/videos.</p>
   <input type="password" id="tokenInput" placeholder="Admin token" style="width:100%" />
   <button id="loginBtn" style="margin-top:10px; width:100%">Enter</button>
   <div id="error"></div>
@@ -144,7 +144,7 @@
       await fetchGallery(eventSelect.value, token);
       showGallery();
     } catch (e) {
-      errorEl.textContent = 'Invalid token or server unreachable.';
+      errorEl.textContent = 'Invalid token or server unreachable. Use the ADMIN_TOKEN value from your .env file.';
       localStorage.removeItem('admin_token');
     }
   });

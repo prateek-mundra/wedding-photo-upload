@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     # Simple shared-secret auth for the admin gallery. Guests never need this;
     # only you/photographer need it to view/list uploads.
-    admin_token: str = Field(default="", description="Set a real value in .env before deploying")
+    admin_token: str = Field(default="", alias="ADMIN_TOKEN", description="Set a real value in .env before deploying")
 
     allowed_origins: str = "*"  # comma-separated list in production, e.g. "https://photos.example.com"
 

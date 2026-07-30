@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Share Your Photos & Videos 💍</title>
+<title>Share Your Photos & Videos</title>
 <style>
   :root {
     --gold: #b8860b;
@@ -105,15 +105,6 @@
   <p class="subtitle">Share your photos & videos with us — thank you for being here! 💛</p>
 
   <div class="card">
-    <label for="event">Which event?</label>
-    <select id="event">
-      <option value="haldi">Haldi</option>
-      <option value="mehendi">Mehendi</option>
-      <option value="sangeet">Sangeet</option>
-      <option value="wedding" selected>Wedding</option>
-      <option value="reception">Reception</option>
-    </select>
-
     <label for="uploaded_by">Your name (optional)</label>
     <input type="text" id="uploaded_by" placeholder="e.g. Rahul's cousin" />
 
@@ -142,14 +133,6 @@
   const statusEl = document.getElementById('status');
   const progressWrap = document.getElementById('progressWrap');
   const progressBar = document.getElementById('progressBar');
-  const eventSelect = document.getElementById('event');
-
-  // Pre-select event from ?event=xyz in the QR link
-  const params = new URLSearchParams(window.location.search);
-  const eventParam = params.get('event');
-  if (eventParam) {
-    [...eventSelect.options].forEach(o => { if (o.value === eventParam) o.selected = true; });
-  }
 
   dropZone.addEventListener('click', () => fileInput.click());
 
@@ -195,7 +178,7 @@
     return new Promise((resolve, reject) => {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('event', eventSelect.value);
+      formData.append('event', 'general');
       formData.append('uploaded_by', document.getElementById('uploaded_by').value);
 
       const xhr = new XMLHttpRequest();

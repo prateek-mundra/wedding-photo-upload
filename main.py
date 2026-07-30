@@ -31,7 +31,7 @@ from schemas import GalleryResponse, HealthResponse, UploadResponse
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("wedding_upload")
 
-ALLOWED_EVENTS = {"haldi", "mehendi", "sangeet", "wedding", "reception", "general"}
+ALLOWED_EVENTS = {"general"}
 ALLOWED_MIME_PREFIXES = ("image/", "video/")
 
 
@@ -81,9 +81,7 @@ async def upload_media(
     event: str = Form("general"),
     uploaded_by: str = Form(""),
 ) -> UploadResponse:
-    normalized_event = event.strip().lower()
-    if normalized_event not in ALLOWED_EVENTS:
-        normalized_event = "general"
+    normalized_event = "general"
 
     if not file.content_type or not file.content_type.startswith(ALLOWED_MIME_PREFIXES):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Only image or video files are allowed.")
@@ -133,10 +131,9 @@ def gallery(event: str) -> GalleryResponse:
     return GalleryResponse(event=normalized_event, count=len(files), files=files)
 
 
-@app.get("/api/qr/{event}")
-def qr_code(event: str) -> StreamingResponse:
-    normalized_event = get_validated_event(event)
-    target_url = f"{get_settings().app_base_url}/app/index.html?event={normalized_event}"
+@app.get("/api/qr")
+def qr_code() -> StreamingResponse:
+    target_url = f"{get_settings().app_base_url}/app/index.html"
     img = qrcode.make(target_url)
 
     buf = io.BytesIO()
