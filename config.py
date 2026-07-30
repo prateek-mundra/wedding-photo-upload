@@ -20,6 +20,8 @@ class Settings(BaseSettings):
 
     google_oauth_credentials_file: str = Field(default="credentials.json", alias="GOOGLE_OAUTH_CREDENTIALS_FILE")
     google_oauth_token_file: str = Field(default="token.json", alias="GOOGLE_OAUTH_TOKEN_FILE")
+    google_oauth_credentials_json: str | None = Field(default=None, alias="GOOGLE_OAUTH_CREDENTIALS_JSON")
+    google_oauth_token_json: str | None = Field(default=None, alias="GOOGLE_OAUTH_TOKEN_JSON")
     drive_root_folder_id: str = Field(default="", alias="DRIVE_ROOT_FOLDER_ID")
 
     # Simple shared-secret auth for the admin gallery. Guests never need this;

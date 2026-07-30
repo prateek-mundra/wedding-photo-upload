@@ -4,10 +4,10 @@ Google Drive integration for the Wedding Photo Upload System.
 Auth strategy: OAuth 2.0 client credentials.
   1. Create a Google Cloud project -> enable "Google Drive API".
   2. Create an OAuth client ID (Desktop app or Web app, depending on your setup).
-  3. Save the downloaded client JSON as credentials.json in the repo root or set
-     GOOGLE_OAUTH_CREDENTIALS_FILE in .env.
-  4. On first run, the app opens a browser prompt for authorization and stores
-     the resulting token in token.json.
+  3. Provide the downloaded client JSON via GOOGLE_OAUTH_CREDENTIALS_JSON
+     (preferred for Railway) or via a local file path using GOOGLE_OAUTH_CREDENTIALS_FILE.
+  4. Provide an authorized user token payload via GOOGLE_OAUTH_TOKEN_JSON
+     (preferred for Railway). For local development you can still use token.json.
   5. Put your shared Drive folder's ID in .env as DRIVE_ROOT_FOLDER_ID
      (the ID is the long string in the folder's URL after /folders/).
 """
@@ -50,43 +50,49 @@ def resolve_config_path(config_value: str, default_name: str) -> Path:
     return project_candidate.resolve()
 
 
+def _load_json_from_env(raw_value: str | None) -> dict[str, Any]:
+    if not raw_value:
+        raise RuntimeError("Missing required OAuth JSON environment variable.")
+
+    try:
+        return json.loads(raw_value)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("OAuth JSON environment variable is not valid JSON.") from exc
+
+
 def get_oauth_credentials() -> Credentials:
     settings = get_settings()
-    credentials_path = resolve_config_path(settings.google_oauth_credentials_file, "credentials.json")
-    token_path = resolve_config_path(settings.google_oauth_token_file, "token.json")
 
-    if not credentials_path.exists():
-        raise RuntimeError(
-            f"Missing OAuth client credentials. Place the downloaded OAuth client JSON file at "
-            f"{credentials_path} or set GOOGLE_OAUTH_CREDENTIALS_FILE to the correct path."
-        )
-
-    if token_path.exists():
-        try:
-            credentials = Credentials.from_authorized_user_file(str(token_path), OAUTH_SCOPES)
-        except ValueError:
-            credentials = None
-
-        if credentials and credentials.valid:
-            return credentials
-
-        if credentials and credentials.expired and credentials.refresh_token:
-            try:
-                credentials.refresh(Request())
-                token_path.write_text(credentials.to_json(), encoding="utf-8")
-                return credentials
-            except Exception:
-                credentials = None
-
-    client_config = json.loads(credentials_path.read_text(encoding="utf-8"))
     try:
-        flow = InstalledAppFlow.from_client_config(client_config, OAUTH_SCOPES)
-    except ValueError as exc:
-        raise RuntimeError("OAuth client configuration is invalid. Check credentials.json.") from exc
+        client_config = _load_json_from_env(settings.google_oauth_credentials_json)
+    except RuntimeError as exc:
+        raise RuntimeError(
+            "Missing OAuth client credentials. Set GOOGLE_OAUTH_CREDENTIALS_JSON to a valid client JSON payload."
+        ) from exc
 
-    credentials = flow.run_local_server(port=0)
-    token_path.write_text(credentials.to_json(), encoding="utf-8")
-    return credentials
+    try:
+        token_payload = _load_json_from_env(settings.google_oauth_token_json)
+    except RuntimeError as exc:
+        raise RuntimeError(
+            "Missing OAuth token. Set GOOGLE_OAUTH_TOKEN_JSON to a valid authorized-user token payload."
+        ) from exc
+
+    try:
+        credentials = Credentials.from_authorized_user_info(token_payload, OAUTH_SCOPES)
+    except ValueError as exc:
+        raise RuntimeError("OAuth token payload is invalid.") from exc
+
+    if credentials.valid:
+        return credentials
+
+    if credentials.expired and credentials.refresh_token:
+        try:
+            credentials.refresh(Request())
+            return credentials
+        except Exception as exc:
+            raise RuntimeError("OAuth token refresh failed.") from exc
+
+    raise RuntimeError("OAuth token is not usable. Provide a fresh authorized-user token payload.")
 
 
 @lru_cache
