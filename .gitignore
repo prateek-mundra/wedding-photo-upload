@@ -1,0 +1,32 @@
+# Secrets — NEVER commit these
+*.env
+.env
+service_account.json
+credentials.json
+token.json
+client_secret*.json
+wedding-photo-upload/service_account.json
+wedding-photo-upload/.env
+wedding-photo-upload/weddingproject
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+*.log
+
+# OS/editor junk
+.DS_Store
+.vscode/
+.idea/
+
+# Generated QR output (regenerate anytime, no need to version)
+qr/out/
+
+# Google OAuth
+credentials.json
+client_secret*.json
+token.json
+service_account.json

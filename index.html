@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Share Your Photos & Videos 💍</title>
+<style>
+  :root {
+    --gold: #b8860b;
+    --cream: #fdf8f0;
+    --ink: #2b2320;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(180deg, var(--cream), #f3e9d8);
+    color: var(--ink);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 60px;
+  }
+  h1 {
+    font-size: 1.5rem;
+    text-align: center;
+    margin-bottom: 4px;
+  }
+  p.subtitle {
+    text-align: center;
+    color: #6b5d4f;
+    margin-top: 0;
+    margin-bottom: 24px;
+    font-size: 0.95rem;
+  }
+  .card {
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  }
+  label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+    margin-top: 14px;
+  }
+  select, input[type=text] {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #ddd;
+    font-size: 1rem;
+  }
+  .upload-zone {
+    margin-top: 16px;
+    border: 2px dashed var(--gold);
+    border-radius: 14px;
+    padding: 28px 16px;
+    text-align: center;
+    background: #fffaf0;
+    cursor: pointer;
+  }
+  .upload-zone input { display: none; }
+  .upload-zone .icon { font-size: 2rem; }
+  button#submitBtn {
+    width: 100%;
+    margin-top: 18px;
+    padding: 14px;
+    border: none;
+    border-radius: 12px;
+    background: var(--gold);
+    color: white;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button#submitBtn:disabled { opacity: 0.5; }
+  #fileList { margin-top: 12px; font-size: 0.85rem; color: #555; }
+  .progress-wrap {
+    margin-top: 14px;
+    background: #eee;
+    border-radius: 8px;
+    overflow: hidden;
+    height: 10px;
+    display: none;
+  }
+  .progress-bar {
+    height: 100%;
+    width: 0%;
+    background: var(--gold);
+    transition: width 0.2s;
+  }
+  #status { margin-top: 14px; font-size: 0.9rem; text-align: center; }
+  .success { color: #2e7d32; }
+  .error { color: #c62828; }
+</style>
+</head>
+<body>
+  <h1>Nicku & Shruti's Wedding</h1>
+  <p class="subtitle">Share your photos & videos with us — thank you for being here! 💛</p>
+
+  <div class="card">
+    <label for="event">Which event?</label>
+    <select id="event">
+      <option value="haldi">Haldi</option>
+      <option value="mehendi">Mehendi</option>
+      <option value="sangeet">Sangeet</option>
+      <option value="wedding" selected>Wedding</option>
+      <option value="reception">Reception</option>
+    </select>
+
+    <label for="uploaded_by">Your name (optional)</label>
+    <input type="text" id="uploaded_by" placeholder="e.g. Rahul's cousin" />
+
+    <label>Photos / Videos</label>
+    <div class="upload-zone" id="dropZone">
+      <div class="icon">📸</div>
+      <div>Tap to choose or take photos/videos</div>
+      <input type="file" id="fileInput" accept="image/*,video/*" multiple capture="environment" />
+    </div>
+    <div id="fileList"></div>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+
+    <button id="submitBtn" disabled>Upload</button>
+    <div id="status"></div>
+  </div>
+
+<script>
+  const API_BASE = window.location.origin; // backend serves this page, so same origin
+  const fileInput = document.getElementById('fileInput');
+  const dropZone = document.getElementById('dropZone');
+  const fileListEl = document.getElementById('fileList');
+  const submitBtn = document.getElementById('submitBtn');
+  const statusEl = document.getElementById('status');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressBar = document.getElementById('progressBar');
+  const eventSelect = document.getElementById('event');
+
+  // Pre-select event from ?event=xyz in the QR link
+  const params = new URLSearchParams(window.location.search);
+  const eventParam = params.get('event');
+  if (eventParam) {
+    [...eventSelect.options].forEach(o => { if (o.value === eventParam) o.selected = true; });
+  }
+
+  dropZone.addEventListener('click', () => fileInput.click());
+
+  let selectedFiles = [];
+  fileInput.addEventListener('change', () => {
+    selectedFiles = [...fileInput.files];
+    fileListEl.textContent = selectedFiles.length
+      ? `${selectedFiles.length} file(s) selected`
+      : '';
+    submitBtn.disabled = selectedFiles.length === 0;
+  });
+
+  submitBtn.addEventListener('click', async () => {
+    if (!selectedFiles.length) return;
+    submitBtn.disabled = true;
+    statusEl.textContent = '';
+    statusEl.className = '';
+    progressWrap.style.display = 'block';
+
+    let uploadedCount = 0;
+    for (const file of selectedFiles) {
+      try {
+        await uploadOne(file, uploadedCount, selectedFiles.length);
+        uploadedCount++;
+      } catch (err) {
+        statusEl.textContent = `Upload failed for ${file.name}. Please try again.`;
+        statusEl.className = 'error';
+        submitBtn.disabled = false;
+        return;
+      }
+    }
+
+    statusEl.textContent = `Thank you! ${uploadedCount} file(s) uploaded successfully 🎉`;
+    statusEl.className = 'success';
+    fileInput.value = '';
+    selectedFiles = [];
+    fileListEl.textContent = '';
+    progressBar.style.width = '0%';
+    submitBtn.disabled = true;
+  });
+
+  function uploadOne(file, index, total) {
+    return new Promise((resolve, reject) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('event', eventSelect.value);
+      formData.append('uploaded_by', document.getElementById('uploaded_by').value);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE}/api/upload`);
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const perFile = e.loaded / e.total;
+          const overall = ((index + perFile) / total) * 100;
+          progressBar.style.width = `${overall}%`;
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else reject(new Error(xhr.responseText));
+      };
+      xhr.onerror = () => reject(new Error('network error'));
+      xhr.send(formData);
+    });
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Admin Gallery — Wedding Photos</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #17151a;
+    color: #f2ede4;
+    padding: 20px;
+  }
+  h1 { font-size: 1.3rem; margin-bottom: 4px; }
+  .toolbar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin: 16px 0;
+  }
+  select, input, button {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid #444;
+    background: #26232b;
+    color: #f2ede4;
+    font-size: 0.9rem;
+  }
+  button {
+    background: #b8860b;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  #meta { font-size: 0.85rem; color: #aaa; margin-bottom: 10px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px;
+  }
+  .tile {
+    background: #26232b;
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .tile img {
+    width: 100%;
+    height: 130px;
+    object-fit: cover;
+    background: #111;
+  }
+  .tile .video-badge {
+    width: 100%;
+    height: 130px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    background: #111;
+  }
+  .tile a { text-decoration: none; color: inherit; }
+  .tile .info {
+    padding: 8px;
+    font-size: 0.72rem;
+    color: #cfc7b8;
+    word-break: break-all;
+  }
+  #error { color: #ff8a80; margin-top: 10px; }
+  #loginBox { max-width: 320px; margin-top: 60px; }
+</style>
+</head>
+<body>
+
+<div id="loginBox">
+  <h1>Admin Gallery</h1>
+  <p>Enter the admin token to view uploaded photos/videos.</p>
+  <input type="password" id="tokenInput" placeholder="Admin token" style="width:100%" />
+  <button id="loginBtn" style="margin-top:10px; width:100%">Enter</button>
+  <div id="error"></div>
+</div>
+
+<div id="galleryBox" style="display:none">
+  <h1>Wedding Gallery — Admin View</h1>
+  <div class="toolbar">
+    <select id="eventSelect">
+      <option value="haldi">Haldi</option>
+      <option value="mehendi">Mehendi</option>
+      <option value="sangeet">Sangeet</option>
+      <option value="wedding" selected>Wedding</option>
+      <option value="reception">Reception</option>
+      <option value="general">General</option>
+    </select>
+    <button id="refreshBtn">Refresh now</button>
+    <label style="font-size:0.85rem"><input type="checkbox" id="autoRefresh" checked /> Auto-refresh (15s)</label>
+    <button id="logoutBtn" style="background:#555">Log out</button>
+  </div>
+  <div id="meta"></div>
+  <div class="grid" id="grid"></div>
+  <div id="galleryError"></div>
+</div>
+
+<script>
+  const API_BASE = window.location.origin;
+  const loginBox = document.getElementById('loginBox');
+  const galleryBox = document.getElementById('galleryBox');
+  const tokenInput = document.getElementById('tokenInput');
+  const loginBtn = document.getElementById('loginBtn');
+  const logoutBtn = document.getElementById('logoutBtn');
+  const errorEl = document.getElementById('error');
+  const galleryErrorEl = document.getElementById('galleryError');
+  const grid = document.getElementById('grid');
+  const meta = document.getElementById('meta');
+  const eventSelect = document.getElementById('eventSelect');
+  const refreshBtn = document.getElementById('refreshBtn');
+  const autoRefreshCheckbox = document.getElementById('autoRefresh');
+
+  let pollTimer = null;
+
+  function getToken() {
+    return localStorage.getItem('admin_token') || '';
+  }
+
+  function showGallery() {
+    loginBox.style.display = 'none';
+    galleryBox.style.display = 'block';
+    loadGallery();
+    startPolling();
+  }
+
+  if (getToken()) showGallery();
+
+  loginBtn.addEventListener('click', async () => {
+    const token = tokenInput.value.trim();
+    if (!token) return;
+    localStorage.setItem('admin_token', token);
+    errorEl.textContent = '';
+    try {
+      await fetchGallery(eventSelect.value, token);
+      showGallery();
+    } catch (e) {
+      errorEl.textContent = 'Invalid token or server unreachable.';
+      localStorage.removeItem('admin_token');
+    }
+  });
+
+  logoutBtn.addEventListener('click', () => {
+    localStorage.removeItem('admin_token');
+    stopPolling();
+    galleryBox.style.display = 'none';
+    loginBox.style.display = 'block';
+  });
+
+  eventSelect.addEventListener('change', loadGallery);
+  refreshBtn.addEventListener('click', loadGallery);
+  autoRefreshCheckbox.addEventListener('change', () => {
+    if (autoRefreshCheckbox.checked) startPolling(); else stopPolling();
+  });
+
+  function startPolling() {
+    stopPolling();
+    if (autoRefreshCheckbox.checked) {
+      pollTimer = setInterval(loadGallery, 15000);
+    }
+  }
+  function stopPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+  }
+
+  async function fetchGallery(event, token) {
+    const res = await fetch(`${API_BASE}/api/gallery/${event}`, {
+      headers: { 'X-Admin-Token': token },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
+  async function loadGallery() {
+    galleryErrorEl.textContent = '';
+    try {
+      const data = await fetchGallery(eventSelect.value, getToken());
+      meta.textContent = `${data.count} file(s) — event: ${data.event}`;
+      renderGrid(data.files);
+    } catch (e) {
+      galleryErrorEl.textContent = 'Failed to load gallery. Token may be invalid.';
+    }
+  }
+
+  function renderGrid(files) {
+    grid.innerHTML = '';
+    for (const f of files) {
+      const tile = document.createElement('div');
+      tile.className = 'tile';
+
+      const link = document.createElement('a');
+      link.href = f.webViewLink || '#';
+      link.target = '_blank';
+
+      if (f.mimeType && f.mimeType.startsWith('image/') && f.thumbnailLink) {
+        const img = document.createElement('img');
+        img.src = f.thumbnailLink;
+        img.loading = 'lazy';
+        link.appendChild(img);
+      } else {
+        const badge = document.createElement('div');
+        badge.className = 'video-badge';
+        badge.textContent = '🎬';
+        link.appendChild(badge);
+      }
+
+      const info = document.createElement('div');
+      info.className = 'info';
+      info.textContent = f.name;
+      link.appendChild(info);
+
+      tile.appendChild(link);
+      grid.appendChild(tile);
+    }
+  }
+</script>
+</body>
+</html>
